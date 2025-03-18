@@ -52,6 +52,8 @@ tag_to_packages: dict = {
 for package, (min_version, extras) in dependent_packages.items():
     for extra in extras.split(', '):
         tag_to_packages[extra].append("{}>={}".format(package, min_version))
+    tag_to_packages['install'].append("numpy<2")
+    tag_to_packages['install'].append("scipy<1.14")
 
 
 # Used by CI to get the min dependencies

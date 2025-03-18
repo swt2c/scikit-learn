@@ -2,19 +2,6 @@
 name: Wheel builder
 
 on:
-  schedule:
-    # Nightly build at 3:42 A.M.
-    - cron: "42 3 */1 * *"
-  push:
-    branches:
-      - master
-      # Release branches
-      - "[0-9]+.[0-9]+.X"
-  pull_request:
-    branches:
-      - master
-      - "[0-9]+.[0-9]+.X"
-  # Manual run
   workflow_dispatch:
 
 jobs:
@@ -22,13 +9,13 @@ jobs:
   check_build_trigger:
     name: Check build trigger
     runs-on: ubuntu-latest
-    if: github.repository == 'scikit-learn/scikit-learn'
+    if: github.repository == 'swt2c/scikit-learn'
     outputs:
       build: ${{ steps.check_build_trigger.outputs.build }}
 
     steps:
       - name: Checkout scikit-learn
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
@@ -47,36 +34,21 @@ jobs:
       # Ensure that a wheel builder finishes even if another fails
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-        python: [36, 37, 38, 39]
-        bitness: [32, 64]
+        os: [ubuntu-latest]
+        python: [311]
+        bitness: [64]
         include:
           # Run 32 and 64 bit version in parallel for Linux and Windows
-          - os: windows-latest
-            bitness: 64
-            platform_id: win_amd64
-          - os: windows-latest
-            bitness: 32
-            platform_id: win32
           - os: ubuntu-latest
             bitness: 64
             platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            bitness: 32
-            platform_id: manylinux_i686
-          - os: macos-latest
-            bitness: 64
-            platform_id: macosx_x86_64
-        exclude:
-          - os: macos-latest
-            bitness: 32
 
     steps:
       - name: Checkout scikit-learn
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
 
       - name: Build and test wheels
         env:
@@ -93,69 +65,11 @@ jobs:
           CIBW_TEST_REQUIRES: pytest pandas threadpoolctl
           CIBW_TEST_COMMAND: bash {project}/build_tools/github/test_wheels.sh
           CIBW_TEST_COMMAND_WINDOWS: bash {project}/build_tools/github/test_windows_wheels.sh ${{ matrix.python }} ${{ matrix.bitness }}
+          CIBW_BUILD_VERBOSITY: 1
 
         run: bash build_tools/github/build_wheels.sh
 
       - name: Store artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           path: wheelhouse/*.whl
-
-  # Build the source distribution under Linux
-  build_sdist:
-    name: Source distribution
-    runs-on: ubuntu-latest
-    needs: check_build_trigger
-    if: needs.check_build_trigger.outputs.build
-
-    steps:
-      - name: Checkout scikit-learn
-        uses: actions/checkout@v1
-
-      - name: Setup Python
-        uses: actions/setup-python@v2
-
-      - name: Build source distribution
-        run: bash build_tools/github/build_source.sh
-        env:
-          SKLEARN_BUILD_PARALLEL: 3
-
-      - name: Test source distribution
-        run: bash build_tools/github/test_source.sh
-        env:
-          OMP_NUM_THREADS: 2
-          OPENBLAS_NUM_THREADS: 2
-          SKLEARN_SKIP_NETWORK_TESTS: 1
-
-      - name: Store artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          path: dist/*.tar.gz
-
-  # Upload the wheels and the source distribution
-  upload_anaconda:
-    name: Upload to Anaconda
-    runs-on: ubuntu-latest
-    needs: [build_wheels, build_sdist]
-    # The artifacts cannot be uploaded on PRs
-    if: github.event_name != 'pull_request'
-
-    steps:
-      - name: Checkout scikit-learn
-        uses: actions/checkout@v1
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v2
-        with:
-          path: dist
-
-      - name: Setup Python
-        uses: actions/setup-python@v2
-
-      - name: Upload artifacts
-        env:
-          # Secret variables need to be mapped to environment variables explicitly
-          SCIKIT_LEARN_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.SCIKIT_LEARN_NIGHTLY_UPLOAD_TOKEN }}
-          SCIKIT_LEARN_STAGING_UPLOAD_TOKEN: ${{ secrets.SCIKIT_LEARN_STAGING_UPLOAD_TOKEN }}
-        # Force a replacement if the remote file already exists
-        run: bash build_tools/github/upload_anaconda.sh
